@@ -5,14 +5,18 @@ const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({extended: true}));
 const cookieParser = require("cookie-parser");
 app.use(cookieParser());
+const bcrypt = require('bcrypt');
 
 app.set("view engine", "ejs");
 
 
 const urlDatabase = {
-  "b2xVn2": "http://www.lighthouselabs.ca",
-  "9sm5xK": "http://www.google.com"
+  b6UTxQ: { longURL: "https://www.tsn.ca", userID: "userRandomID" },
+  i3BoGr: { longURL: "https://www.google.ca", userID: "user2RandomID" },
+  sgq3y6: {longURL: "https://www.lighthouselabs.ca/", userID:"userRandomID"}
 };
+
+
 
 
 const users = {
@@ -40,6 +44,16 @@ const findUserByEmail = (email) => {
     }
   }
   return false;
+};
+
+const findURLByUser = function(cookieID) {
+  let output = {};
+  for (let short in urlDatabase) {
+    if (urlDatabase[short]['userID'] === cookieID) {
+      output[short] = urlDatabase[short]['longURL'];
+    }
+  }
+  return output;
 };
 
 
@@ -70,45 +84,74 @@ app.get("/login", (req,res)=>{
 
 app.get("/urls", (req, res) => {
   let user = users[req.cookies["user_id"]];
-  let templateVars = { urls: urlDatabase, 'user': user};
-  res.render("urls_index", templateVars);
+  if (!req.cookies["user_id"]) {
+    res.redirect("/login");
+  } else {
+    let userURL = findURLByUser(req.cookies["user_id"]);
+    let templateVars = { urls: userURL, 'user': user};
+    res.render("urls_index", templateVars);
+  }
 });
 
 app.get("/urls/new", (req, res) => {
   let user = users[req.cookies["user_id"]];
-  let templateVars = {user: user};
-  res.render("urls_new", templateVars);
+  if (!req.cookies["user_id"]) {
+    res.redirect("/login");
+  } else {
+    let templateVars = {user: user};
+    res.render("urls_new", templateVars);
+  }
+  
 });
 
 app.get("/urls/:shortURL", (req, res) => {
-  let user = users[req.cookies["user_id"]];
-  let templateVars = { shortURL: req.params.shortURL, longURL: urlDatabase[req.params.shortURL], user: user};
-  res.render("urls_show", templateVars);
+  let corresponding_user = urlDatabase[req.params.shortURL]["userID"];
+  if (req.cookies["user_id"] !== corresponding_user) {
+    res.status(403);
+    res.send("Error: You don't have permission to access this page");
+  } else {
+    let user = users[req.cookies["user_id"]];
+    let templateVars = { shortURL: req.params.shortURL, longURL: urlDatabase[req.params.shortURL], user: user};
+    res.render("urls_show", templateVars);
+  }
 });
 
 app.get("/u/:shortURL", (req, res) => {
-  const longURL = urlDatabase[req.params.shortURL];
+  const longURL = urlDatabase[req.params.shortURL]["longURL"];
   res.redirect(longURL);
 });
 
 app.post("/urls", (req, res) => {
-  console.log(req.body);  // Log the POST request body to the console
   let shortVersion = generateRandomString();
-  urlDatabase[shortVersion] = req.body.longURL;
-  res.redirect(`/urls/${shortVersion}`);         // Respond with 'Ok' (we will replace this)
+  let currentID = req.cookies["user_id"];
+  urlDatabase[shortVersion] = {longURL: req.body.longURL, userID: currentID};
+  console.log(urlDatabase);
+  res.redirect(`/urls/${shortVersion}`);
 
 });
 
 app.post("/urls/:shortURL/delete", (req, res) => {
-  delete urlDatabase[req.params.shortURL];
-  res.redirect("/urls");
+  let corresponding_user = urlDatabase[req.params["shortURL"]]['userID'];
+  if (req.cookies["user_id"] !== corresponding_user) {
+    res.status(403);
+    res.send("Error: You don't have permission to access this operation");
+  } else {
+    delete urlDatabase[req.params.shortURL];
+    res.redirect("/urls");
+  }
 });
 
 
 app.post("/urls/:id", (req, res) => {
-  let newUrl = req.body.newURL;
-  urlDatabase[req.params.id] = newUrl;
-  res.redirect("/urls/");
+  let corresponding_user = urlDatabase[req.params.id]["userID"];
+  if (req.cookies["user_id"] !== corresponding_user) {
+    res.status(403);
+    res.send("Error: You don't have permission to access this operation");
+  } else {
+    let newUrl = req.body.newURL;
+    urlDatabase[req.params.id] = newUrl;
+    res.redirect("/urls/");
+  }
 });
 
 
@@ -118,7 +161,7 @@ app.post("/login", (req,res)=>{
     res.status(403);
     res.send("Error: Cannot find an account for the email: " + req.body.email);
   } else {
-    if (user.password !== req.body.password) {
+    if (!bcrypt.compareSync(req.body.password,user.password)) {
       res.status(403);
       res.send("Error: Incorrect password");
     } else {
@@ -142,12 +185,13 @@ app.post("/register", (req, res) =>{
     res.send("Error: email already in use");
   } else {
     let newID = generateRandomString();
+    const password = req.body.password;
+    const hashedPassword = bcrypt.hashSync(password,10);
     users[newID] = {};
     users[newID]['id'] = newID;
     users[newID]['email'] = req.body.email;
-    users[newID]['password'] = req.body.password;
+    users[newID]['password'] = hashedPassword;
     res.cookie("user_id",newID);
-    console.log(users);
     res.redirect("/urls/");
   }
   
