@@ -7,7 +7,9 @@ let cookieSession = require('cookie-session');
 app.use(cookieSession({name: 'session',
   keys: ['key1', 'key2']}));
 const bcrypt = require('bcrypt');
-const findUserByEmail = require('./helpers.js');
+const { findUserByEmail } = require('./helpers.js');
+const { generateRandomString } = require('./helpers.js');
+const { findURLByUser } = require('./helpers.js');
 app.set("view engine", "ejs");
 
 
@@ -31,36 +33,16 @@ const users = {
   }
 };
 
-const generateRandomString = function() {
-  let random = Math.random().toString(36).substring(7);
-  return random;
-};
-
-
-
-const findURLByUser = function(cookieID) {
-  let output = {};
-  for (let short in urlDatabase) {
-    if (urlDatabase[short]['userID'] === cookieID) {
-      output[short] = urlDatabase[short]['longURL'];
-    }
-  }
-  return output;
-};
-
-
+//GET home page redirects to URLS or login depending on whether the user is logged in already
 app.get("/", (req, res) => {
-  res.send("Hello!");
+  if (!req.session.user_id) {
+    res.redirect("/login");
+  } else {
+    res.redirect("/urls");
+  }
 });
 
-app.get("/urls.json", (req, res) => {
-  res.json(urlDatabase);
-});
-
-app.get("/hello", (req, res) => {
-  res.send("<html><body>Hello <b>World</b></body></html>\n");
-});
-
+//GET Registration page
 app.get("/register" , (req,res)=>{
   let user = users[req.session.user_id];
   let templateVars = {user};
@@ -68,37 +50,40 @@ app.get("/register" , (req,res)=>{
 });
 
 
+//GET Login page
 app.get("/login", (req,res)=>{
   let user = users[req.session.user_id];
   let templateVars = {user};
   res.render("form_login", templateVars);
 });
 
+//GET list of URLs
 app.get("/urls", (req, res) => {
   let user = users[req.session.user_id];
   if (!req.session.user_id) {
     res.redirect("/login");
   } else {
-    let userURL = findURLByUser(req.session.user_id);
+    let userURL = findURLByUser(req.session.user_id, urlDatabase);
     let templateVars = { urls: userURL, 'user': user};
     res.render("urls_index", templateVars);
   }
 });
 
+//GET create new URL page
 app.get("/urls/new", (req, res) => {
-  let user = users[req.session.user_id];
   if (!req.session.user_id) {
     res.redirect("/login");
   } else {
+    let user = users[req.session.user_id];
     let templateVars = {user: user};
     res.render("urls_new", templateVars);
   }
-  
 });
 
+//GET page for specific short URL
 app.get("/urls/:shortURL", (req, res) => {
-  let corresponding_user = urlDatabase[req.params.shortURL]["userID"];
-  if (req.session.user_id !== corresponding_user) {
+  let correspondingUser = urlDatabase[req.params.shortURL]["userID"];
+  if (req.session.user_id !== correspondingUser) {
     res.status(403);
     res.send("Error: You don't have permission to access this page");
   } else {
@@ -108,11 +93,13 @@ app.get("/urls/:shortURL", (req, res) => {
   }
 });
 
+//GET short url link, redirect to the corresponding long URL
 app.get("/u/:shortURL", (req, res) => {
   const longURL = urlDatabase[req.params.shortURL]["longURL"];
   res.redirect(longURL);
 });
 
+//POST method for creating a new URL
 app.post("/urls", (req, res) => {
   let shortVersion = generateRandomString();
   let currentID = req.session.user_id;
@@ -121,9 +108,10 @@ app.post("/urls", (req, res) => {
 
 });
 
+//POST method for deleting an existing short URL
 app.post("/urls/:shortURL/delete", (req, res) => {
-  let corresponding_user = urlDatabase[req.params["shortURL"]]['userID'];
-  if (req.session.user_id !== corresponding_user) {
+  let correspondingUser = urlDatabase[req.params["shortURL"]]['userID'];
+  if (req.session.user_id !== correspondingUser) {
     res.status(403);
     res.send("Error: You don't have permission to access this operation");
   } else {
@@ -132,10 +120,10 @@ app.post("/urls/:shortURL/delete", (req, res) => {
   }
 });
 
-
+//POST method for editing an existing short URL
 app.post("/urls/:id", (req, res) => {
-  let corresponding_user = urlDatabase[req.params.id]["userID"];
-  if (req.session.user_id !== corresponding_user) {
+  let correspondingUser = urlDatabase[req.params.id]["userID"];
+  if (req.session.user_id !== correspondingUser) {
     res.status(403);
     res.send("Error: You don't have permission to access this operation");
   } else {
@@ -145,7 +133,7 @@ app.post("/urls/:id", (req, res) => {
   }
 });
 
-
+//POST method for logging in
 app.post("/login", (req,res)=>{
   let user = findUserByEmail(req.body.email, users);
   if (!user) {
@@ -164,11 +152,13 @@ app.post("/login", (req,res)=>{
   }
 });
 
+//POST method for logging out
 app.post("/logout", (req,res)=>{
   req.session = null;
   res.redirect("/urls/");
 });
 
+//POST method for registering a new user
 app.post("/register", (req, res) =>{
   if (req.body.email === "" || req.body.password === "") {
     res.status(400);
@@ -190,6 +180,7 @@ app.post("/register", (req, res) =>{
   
 });
 
+//Launch server
 app.listen(PORT, () => {
   console.log(`Example app listening on port ${PORT}!`);
 });
