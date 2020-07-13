@@ -128,7 +128,8 @@ app.post("/urls/:id", (req, res) => {
     res.send("Error: You don't have permission to access this operation");
   } else {
     let newUrl = req.body.newURL;
-    urlDatabase[req.params.id] = newUrl;
+    let user = urlDatabase[req.params.id]["userID"];
+    urlDatabase[req.params.id] = {longURL: newUrl, userID: user};
     res.redirect("/urls/");
   }
 });
